@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Product Management</title>
+    <link rel="stylesheet" th:href="@{/css/bootstrap.min.css}">
+    <link rel="stylesheet" th:href="@{/css/bootstrap-icons.css}">
+    <link rel="icon" th:href="@{/icon/product.png}">
+</head>
+<body class="bg-light">
+
+<div class="container py-5">
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="successToast" class="toast align-items-center text-bg-success border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body" id="successMessage"></div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+        <div id="errorToast" class="toast align-items-center text-bg-danger border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body" id="errorMessage"></div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Card -->
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 text-primary fw-bold">Product Management</h5>
+            <button type="button" class="btn btn-primary" onclick="openAddModal()">
+                <i class="bi bi-plus-lg"></i> Add Product
+            </button>
+        </div>
+
+        <!-- Table -->
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">ID</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Price</th>
+                        <th>Username</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="productTableBody">
+                    <!-- Data will be loaded here by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="card-footer bg-white py-3" id="paginationContainer" style="display: none;">
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center mb-0" id="pagination"></ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+<!-- Product Modal (Add/Edit) -->
+<div class="modal fade" id="productModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">Product Form</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="productForm">
+                    <input type="hidden" id="productId">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="name" required>
+                        <div class="invalid-feedback" id="nameError"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="description" rows="2" required></textarea>
+                        <div class="invalid-feedback" id="descriptionError"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Price</label>
+                        <input type="number" step="0.01" class="form-control" id="price" required>
+                        <div class="invalid-feedback" id="priceError"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" required>
+                        <div class="invalid-feedback" id="usernameError"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="saveProduct()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <h5 class="mb-3">Are you sure you want to delete this product?</h5>
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">Yes, Delete</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script th:src="@{/js/bootstrap.bundle.min.js}"></script>
+<script>
+    // State
+    let currentPage = 0;
+    let pageSize = 5;
+    let totalPages = 0;
+    let deleteId = null;
+
+    // Load products on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadProducts(currentPage, pageSize);
+    });
+
+    // Fetch products from API
+    async function loadProducts(page, size) {
+        try {
+            const response = await fetch(`/api/products?page=${page}&size=${size}`);
+            if (!response.ok) throw new Error('Failed to fetch products');
+            const data = await response.json();
+            renderTable(data);
+            updatePagination(data);
+        } catch (error) {
+            showError('Error loading products: ' + error.message);
+        }
+    }
+
+    // Render table rows
+    function renderTable(pageData) {
+        const tbody = document.getElementById('productTableBody');
+        tbody.innerHTML = '';
+
+        if (pageData.content.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No data available</td></tr>';
+            document.getElementById('paginationContainer').style.display = 'none';
+            return;
+        }
+
+        pageData.content.forEach(product => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="ps-4">${product.id}</td>
+                <td>${escapeHtml(product.name)}</td>
+                <td>${escapeHtml(product.description)}</td>
+                <td>${product.price}</td>
+                <td>${escapeHtml(product.username)}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-sm btn-outline-warning me-1" onclick="openEditModal(${product.id})">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${product.id})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        document.getElementById('paginationContainer').style.display = 'block';
+        currentPage = pageData.number;
+        totalPages = pageData.totalPages;
+    }
+
+    // Simple escape to prevent XSS
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Pagination UI
+    function updatePagination(pageData) {
+        const pagination = document.getElementById('pagination');
+        pagination.innerHTML = '';
+
+        // Previous button
+        const prevLi = document.createElement('li');
+        prevLi.className = `page-item ${pageData.first ? 'disabled' : ''}`;
+        prevLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${pageData.number - 1})">Previous</a>`;
+        pagination.appendChild(prevLi);
+
+        // Page numbers
+        for (let i = 0; i < pageData.totalPages; i++) {
+            const li = document.createElement('li');
+            li.className = `page-item ${i === pageData.number ? 'active' : ''}`;
+            li.innerHTML = `<a class="page-link" href="#" onclick="changePage(${i})">${i + 1}</a>`;
+            pagination.appendChild(li);
+        }
+
+        // Next button
+        const nextLi = document.createElement('li');
+        nextLi.className = `page-item ${pageData.last ? 'disabled' : ''}`;
+        nextLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${pageData.number + 1})">Next</a>`;
+        pagination.appendChild(nextLi);
+    }
+
+    function changePage(page) {
+        if (page >= 0 && page < totalPages) {
+            loadProducts(page, pageSize);
+        }
+    }
+
+    // Modal functions
+    function openAddModal() {
+        document.getElementById('modalTitle').innerText = 'Add Product';
+        document.getElementById('productForm').reset();
+        document.getElementById('productId').value = '';
+        clearValidationErrors();
+        new bootstrap.Modal(document.getElementById('productModal')).show();
+    }
+
+    async function openEditModal(id) {
+        try {
+            const response = await fetch(`/api/products/${id}`);
+            if (!response.ok) throw new Error('Product not found');
+            const product = await response.json();
+
+            document.getElementById('modalTitle').innerText = 'Edit Product';
+            document.getElementById('productId').value = product.id;
+            document.getElementById('name').value = product.name;
+            document.getElementById('description').value = product.description;
+            document.getElementById('price').value = product.price;
+            document.getElementById('username').value = product.username;
+            clearValidationErrors();
+            new bootstrap.Modal(document.getElementById('productModal')).show();
+        } catch (error) {
+            showError('Error loading product: ' + error.message);
+        }
+    }
+
+    function clearValidationErrors() {
+        document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    }
+
+    // Save product (create or update)
+    async function saveProduct() {
+        const id = document.getElementById('productId').value;
+        const productData = {
+            name: document.getElementById('name').value,
+            description: document.getElementById('description').value,
+            price: parseFloat(document.getElementById('price').value),
+            username: document.getElementById('username').value
+        };
+
+        // Basic validation
+        if (!productData.name || !productData.description || !productData.price || !productData.username) {
+            showError('All fields are required');
+            return;
+        }
+
+        const url = id ? `/api/products/${id}` : '/api/products';
+        const method = id ? 'PUT' : 'POST';
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(productData)
+            });
+
+            if (!response.ok) {
+                // Handle validation errors from server
+                if (response.status === 400) {
+                    const errors = await response.json();
+                    displayValidationErrors(errors);
+                }
+                throw new Error(`Failed to save product (status ${response.status})`);
+            }
+
+            // Close modal and refresh list
+            bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+            showSuccess(id ? 'Product updated successfully' : 'Product created successfully');
+            loadProducts(currentPage, pageSize);
+        } catch (error) {
+            showError('Error saving product: ' + error.message);
+        }
+    }
+
+    // Display validation errors on form fields
+    function displayValidationErrors(errors) {
+        clearValidationErrors();
+        if (errors.errors) {
+            for (const [field, message] of Object.entries(errors.errors)) {
+                const input = document.getElementById(field);
+                if (input) {
+                    input.classList.add('is-invalid');
+                    const errorDiv = document.getElementById(field + 'Error');
+                    if (errorDiv) errorDiv.innerText = message;
+                }
+            }
+        } else {
+            showError(errors.message || 'Validation error');
+        }
+    }
+
+    // Delete modal
+    function openDeleteModal(id) {
+        deleteId = id;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    }
+
+    async function confirmDelete() {
+        if (!deleteId) return;
+
+        try {
+            const response = await fetch(`/api/products/${deleteId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Failed to delete product');
+
+            bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+            showSuccess('Product deleted successfully');
+            loadProducts(currentPage, pageSize);
+        } catch (error) {
+            showError('Error deleting product: ' + error.message);
+        } finally {
+            deleteId = null;
+        }
+    }
+
+    // Toast helpers
+    function showSuccess(message) {
+        document.getElementById('successMessage').innerText = message;
+        const toast = new bootstrap.Toast(document.getElementById('successToast'));
+        toast.show();
+    }
+
+    function showError(message) {
+        document.getElementById('errorMessage').innerText = message;
+        const toast = new bootstrap.Toast(document.getElementById('errorToast'));
+        toast.show();
+    }
+</script>
+</body>
+</html>
